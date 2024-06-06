@@ -1,0 +1,51 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data"
+column_names = ['status_of_existing_checking_account', 'duration_in_month', 'credit_history', 'purpose', 'credit_amount',
+                'savings_account_bonds', 'present_employment_since', 'installment_rate_in_percentage_of_disposable_income',
+                'personal_status_and_sex', 'other_debtors_guarantors', 'present_residence_since', 'property', 'age_in_years',
+                'other_installment_plans', 'housing', 'number_of_existing_credits_at_this_bank', 'job',
+                'number_of_people_being_liable_to_provide_maintenance_for', 'telephone', 'foreign_worker', 'credit_risk']
+df = pd.read_csv(url, delim_whitespace=True, header=None, names=column_names)
+df['credit_risk'] = df['credit_risk'].map({1: 1, 2: 0})
+X = df.drop(columns=['credit_risk'])
+y = df['credit_risk']
+categorical_features = X.select_dtypes(include=['object']).columns.tolist()
+numerical_features = X.select_dtypes(exclude=['object']).columns.tolist()
+numerical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())])
+
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='most_frequent')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numerical_transformer, numerical_features),
+        ('cat', categorical_transformer, categorical_features)])
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+model = Pipeline(steps=[('preprocessor', preprocessor),
+                        ('classifier', RandomForestClassifier(random_state=42))])
+param_grid = {
+    'classifier__n_estimators': [100, 200, 300],
+    'classifier__max_depth': [None, 10, 20, 30],
+    'classifier__min_samples_split': [2, 5, 10],
+    'classifier__min_samples_leaf': [1, 2, 4]
+}
+grid_search = GridSearchCV(model, param_grid, cv=5, n_jobs=-1, scoring='roc_auc')
+grid_search.fit(X_train, y_train)
+best_model = grid_search.best_estimator_
+print("Best parameters found: ", grid_search.best_params_)
+y_pred = best_model.predict(X_test)
+y_pred_proba = best_model.predict_proba(X_test)[:, 1]
+print("Classification Report:")
+print(classification_report(y_test, y_pred))
+print("ROC-AUC Score:", roc_auc_score(y_test, y_pred_proba))
+print("Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
